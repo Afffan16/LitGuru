@@ -36,22 +36,18 @@ def load_book_data():
 # Setup embeddings + Chroma DB
 # ==============================
 @st.cache_resource
-def setup_embeddings():
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
-        model_kwargs={"device": "cpu"}
-    )
-
-@st.cache_resource
-def setup_chroma(embeddings):
+def setup_chroma(_embeddings):  
     return Chroma(
         persist_directory="./chroma_db",
-        embedding_function=embeddings
+        embedding_function=_embeddings 
     )
 
+# Initialize components
 books = load_book_data()
 huggingface_embeddings = setup_embeddings()
 db_books = setup_chroma(huggingface_embeddings)
+
+
 # ==============================
 # Recommendation Logic
 # ==============================
