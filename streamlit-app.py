@@ -3,6 +3,7 @@ import numpy as np
 import streamlit as st
 import os
 import chromadb
+from chromadb.config import Settings
 from dotenv import load_dotenv
 
 from langchain_community.vectorstores import Chroma
@@ -38,7 +39,7 @@ huggingface_embeddings = HuggingFaceEmbeddings(
 db_books = Chroma(
     persist_directory="./chroma_db",
     embedding_function=huggingface_embeddings,
-    client_settings=chromadb.config.Settings(
+    client_settings=Settings(
         anonymized_telemetry=False,
         is_persistent=True
     )
