@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import os
-import chromadb
 from chromadb.config import Settings
 from dotenv import load_dotenv
 
@@ -10,105 +9,136 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # ==============================
-# Load env vars
+# Load env vars & Configure
 # ==============================
-
 load_dotenv()
 openai_api = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
 hf_token = st.secrets.get("HUGGINGFACEHUB_API_TOKEN", os.getenv("HUGGINGFACEHUB_API_TOKEN", ""))
 
 # ==============================
-# Load dataset
+# Cache decorators
 # ==============================
-
 @st.cache_data
 def load_book_data():
-    try:
-        books = pd.read_csv("books_with_emotions.csv")
-        books["large_thumbnail"] = books["thumbnail"] + "&fife=w800"
-        books["large_thumbnail"] = np.where(
-            books["large_thumbnail"].isna(),
-            "cover-not-found.jpg",
-            books["large_thumbnail"],
-        )
-        return books
-    except Exception as e:
-        st.error(f"Error loading book data: {str(e)}")
-        return pd.DataFrame()
+    books = pd.read_csv("books_with_emotions.csv")
+    books["large_thumbnail"] = books["thumbnail"] + "&fife=w800"
+    books["large_thumbnail"] = np.where(
+        books["large_thumbnail"].isna(),
+        "cover-not-found.jpg",
+        books["large_thumbnail"],
+    )
+    return books
 
-
-
-
-# ==============================
-# Setup embeddings + Chroma DB
-# ==============================
 @st.cache_resource
 def setup_embeddings():
-    try:
-        return HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_kwargs={"device": "cpu"}
-        )
-    except Exception as e:
-        st.error(f"Error setting up embeddings: {str(e)}")
-        return None
+    return HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs={"device": "cpu"}
+    )
 
 @st.cache_resource
 def setup_chroma(_embeddings):
-    try:
-        if _embeddings is None:
-            return None
-        return Chroma(
-            persist_directory="./chroma_db",
-            embedding_function=_embeddings
-        )
-    except Exception as e:
-        st.error(f"Error setting up Chroma DB: {str(e)}")
-        return None
-
-    # If collection is empty, add initial documents
-    if len(db.get()) == 0:
-        books = load_book_data()
-        # Create text chunks for embedding
-        texts = [f"{row['isbn13']} {row['title']} {row['description']}" for _, row in books.iterrows()]
+    # Configure ChromaDB
+    client_settings = Settings(
+        anonymized_telemetry=False,
+        is_persistent=True
+    )
+    
+    # Initialize ChromaDB
+    db = Chroma(
+        persist_directory="./chroma_db",
+        embedding_function=_embeddings,
+        client_settings=client_settings
+    )
+    
+    # Initialize collection if empty
+    if db._collection.count() == 0:
+        books_data = load_book_data()
+        texts = []
+        metadatas = []
+        ids = []
+        
+        for idx, row in books_data.iterrows():
+            # Create text for embedding
+            text = f"{row['isbn13']} {row['title']} {row['authors']} {row['description']}"
+            texts.append(text)
+            
+            # Create metadata
+            metadata = {
+                "isbn13": str(row['isbn13']),
+                "title": row['title'],
+                "authors": row['authors'],
+                "description": row['description'],
+                "category": str(row['simple_categories']),
+                "joy": float(row['joy']),
+                "sadness": float(row['sadness']),
+                "anger": float(row['anger']),
+                "fear": float(row['fear']),
+                "surprise": float(row['surprise'])
+            }
+            metadatas.append(metadata)
+            ids.append(str(idx))
+        
         # Add documents to ChromaDB
-        db.add_texts(texts=texts)
-        # Persist the database
+        db.add_texts(
+            texts=texts,
+            metadatas=metadatas,
+            ids=ids
+        )
         db.persist()
     
     return db
 
-# Initialize components with proper sequence
+# ==============================
+# Initialize components
+# ==============================
 books = load_book_data()
 huggingface_embeddings = setup_embeddings()
 db_books = setup_chroma(huggingface_embeddings)
-
 
 # ==============================
 # Recommendation Logic
 # ==============================
 def retrieve_semantic_recommendations(query: str, initial_top_k: int = 50) -> pd.DataFrame:
-    recs = db_books.similarity_search(query, k=initial_top_k)
-    books_list = [int(rec.page_content.strip('"').split()[0]) for rec in recs]
-    return books[books["isbn13"].isin(books_list)].head(initial_top_k)
+    try:
+        # Get recommendations with metadata
+        results = db_books.similarity_search_with_score(
+            query, 
+            k=initial_top_k
+        )
+        # Extract ISBNs from results
+        books_list = [int(doc.page_content.split()[0]) for doc, _ in results]
+        return books[books["isbn13"].isin(books_list)]
+    except Exception as e:
+        st.error(f"Search error: {str(e)}")
+        return pd.DataFrame()
 
 def recommend_books(query: str, category: str, tone: str, final_top_k: int = 16):
+    # Get recommendations
     title_matches = books[books["title"].str.contains(query, case=False, na=False)]
     semantic_matches = retrieve_semantic_recommendations(query)
+    
+    # Combine results
     recommendations = pd.concat([title_matches, semantic_matches]).drop_duplicates("isbn13")
+    
+    # Apply filters
     if category != "All":
         recommendations = recommendations[recommendations["simple_categories"] == category]
+    
+    # Sort by emotional tone
     if tone == "Happy":
-        recommendations = recommendations.sort_values(by="joy", ascending=False)
+        recommendations = recommendations.nlargest(final_top_k, 'joy')
     elif tone == "Surprising":
-        recommendations = recommendations.sort_values(by="surprise", ascending=False)
+        recommendations = recommendations.nlargest(final_top_k, 'surprise')
     elif tone == "Angry":
-        recommendations = recommendations.sort_values(by="anger", ascending=False)
+        recommendations = recommendations.nlargest(final_top_k, 'anger')
     elif tone == "Suspenseful":
-        recommendations = recommendations.sort_values(by="fear", ascending=False)
+        recommendations = recommendations.nlargest(final_top_k, 'fear')
     elif tone == "Sad":
-        recommendations = recommendations.sort_values(by="sadness", ascending=False)
+        recommendations = recommendations.nlargest(final_top_k, 'sadness')
+    
     return recommendations.head(final_top_k)
+
 
 
 # ==============================
