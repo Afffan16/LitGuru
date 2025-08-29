@@ -1,12 +1,13 @@
 streamlit==1.49.0
-pandas==2.0.0
-numpy==1.24.0
+pandas~=2.1.0
+numpy~=1.24.0
 python-dotenv==1.0.0
 langchain-community==0.0.10
 sentence-transformers==2.2.2
 chromadb==0.3.26
-sqlalchemy<2.0.0
-hnswlib<=0.7.0
+# Explicitly specify torch version compatible with Python 3.13
+--find-links https://download.pytorch.org/whl/cpu/torch_stable.html
+torch==2.1.0+cpu
+# Other dependencies
 huggingface-hub==0.20.1
 plotly==5.18.0
-torch==2.0.0
