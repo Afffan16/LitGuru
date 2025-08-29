@@ -33,11 +33,15 @@ huggingface_embeddings = HuggingFaceEmbeddings(
     model_kwargs={"device": "cpu"}
 )
 
+# Modified Chroma initialization
 db_books = Chroma(
     persist_directory="./chroma_db",
-    embedding_function=huggingface_embeddings
+    embedding_function=huggingface_embeddings,
+    client_settings=chromadb.config.Settings(
+        anonymized_telemetry=False,
+        is_persistent=True
+    )
 )
-
 # ==============================
 # Recommendation Logic
 # ==============================
