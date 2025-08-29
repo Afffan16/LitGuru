@@ -1,0 +1,17 @@
+# Environment
+.venv/
+.env
+
+# IDE / Editor
+.idea/
+.vscode/
+
+# Gradio cache
+.gradio/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
