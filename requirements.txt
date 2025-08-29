@@ -8,3 +8,4 @@ chromadb==0.4.15
 huggingface-hub>=0.20.1
 plotly>=5.18.0
 torch>=2.0.0
+sqlite3 >= 3.35.0
