@@ -12,38 +12,46 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 # ==============================
 # Load env vars
 # ==============================
+
 load_dotenv()
-openai_api = os.getenv("OPENAI_API_KEY")
-hf_token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+openai_api = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+hf_token = st.secrets.get("HUGGINGFACEHUB_API_TOKEN", os.getenv("HUGGINGFACEHUB_API_TOKEN", ""))
 
 # ==============================
 # Load dataset
 # ==============================
-books = pd.read_csv("books_with_emotions.csv")
-books["large_thumbnail"] = books["thumbnail"] + "&fife=w800"
-books["large_thumbnail"] = np.where(
-    books["large_thumbnail"].isna(),
-    "cover-not-found.jpg",
-    books["large_thumbnail"],
-)
+
+@st.cache_data
+def load_book_data():
+    books = pd.read_csv("books_with_emotions.csv")
+    books["large_thumbnail"] = books["thumbnail"] + "&fife=w800"
+    books["large_thumbnail"] = np.where(
+        books["large_thumbnail"].isna(),
+        "cover-not-found.jpg",
+        books["large_thumbnail"],
+    )
+    return books
 
 # ==============================
 # Setup embeddings + Chroma DB
 # ==============================
-huggingface_embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2",
-    model_kwargs={"device": "cpu"}
-)
-
-# Modified Chroma initialization
-db_books = Chroma(
-    persist_directory="./chroma_db",
-    embedding_function=huggingface_embeddings,
-    client_settings=Settings(
-        anonymized_telemetry=False,
-        is_persistent=True
+@st.cache_resource
+def setup_embeddings():
+    return HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs={"device": "cpu"}
     )
-)
+
+@st.cache_resource
+def setup_chroma(embeddings):
+    return Chroma(
+        persist_directory="./chroma_db",
+        embedding_function=embeddings
+    )
+
+books = load_book_data()
+huggingface_embeddings = setup_embeddings()
+db_books = setup_chroma(huggingface_embeddings)
 # ==============================
 # Recommendation Logic
 # ==============================
