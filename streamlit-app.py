@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import os
+import chromadb
 from dotenv import load_dotenv
 
 from langchain_community.vectorstores import Chroma
