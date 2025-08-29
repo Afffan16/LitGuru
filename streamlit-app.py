@@ -66,28 +66,22 @@ def setup_chroma(_embeddings):
         st.error(f"Error setting up Chroma DB: {str(e)}")
         return None
 
-# Initialize components with error handling
-@st.cache_resource
-def initialize_components():
-    books = load_book_data()
-    if books.empty:
-        st.error("Failed to load book data")
-        st.stop()
+    # If collection is empty, add initial documents
+    if len(db.get()) == 0:
+        books = load_book_data()
+        # Create text chunks for embedding
+        texts = [f"{row['isbn13']} {row['title']} {row['description']}" for _, row in books.iterrows()]
+        # Add documents to ChromaDB
+        db.add_texts(texts=texts)
+        # Persist the database
+        db.persist()
     
-    embeddings = setup_embeddings()
-    if embeddings is None:
-        st.error("Failed to initialize embeddings")
-        st.stop()
-    
-    db = setup_chroma(embeddings)
-    if db is None:
-        st.error("Failed to initialize vector database")
-        st.stop()
-    
-    return books, embeddings, db
+    return db
 
-# Initialize components
-books, huggingface_embeddings, db_books = initialize_components()
+# Initialize components with proper sequence
+books = load_book_data()
+huggingface_embeddings = setup_embeddings()
+db_books = setup_chroma(huggingface_embeddings)
 
 
 # ==============================
