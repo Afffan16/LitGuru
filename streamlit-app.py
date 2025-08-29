@@ -23,29 +23,71 @@ hf_token = st.secrets.get("HUGGINGFACEHUB_API_TOKEN", os.getenv("HUGGINGFACEHUB_
 
 @st.cache_data
 def load_book_data():
-    books = pd.read_csv("books_with_emotions.csv")
-    books["large_thumbnail"] = books["thumbnail"] + "&fife=w800"
-    books["large_thumbnail"] = np.where(
-        books["large_thumbnail"].isna(),
-        "cover-not-found.jpg",
-        books["large_thumbnail"],
-    )
-    return books
+    try:
+        books = pd.read_csv("books_with_emotions.csv")
+        books["large_thumbnail"] = books["thumbnail"] + "&fife=w800"
+        books["large_thumbnail"] = np.where(
+            books["large_thumbnail"].isna(),
+            "cover-not-found.jpg",
+            books["large_thumbnail"],
+        )
+        return books
+    except Exception as e:
+        st.error(f"Error loading book data: {str(e)}")
+        return pd.DataFrame()
+
+
+
 
 # ==============================
 # Setup embeddings + Chroma DB
 # ==============================
 @st.cache_resource
-def setup_chroma(_embeddings):  
-    return Chroma(
-        persist_directory="./chroma_db",
-        embedding_function=_embeddings 
-    )
+def setup_embeddings():
+    try:
+        return HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_kwargs={"device": "cpu"}
+        )
+    except Exception as e:
+        st.error(f"Error setting up embeddings: {str(e)}")
+        return None
+
+@st.cache_resource
+def setup_chroma(_embeddings):
+    try:
+        if _embeddings is None:
+            return None
+        return Chroma(
+            persist_directory="./chroma_db",
+            embedding_function=_embeddings
+        )
+    except Exception as e:
+        st.error(f"Error setting up Chroma DB: {str(e)}")
+        return None
+
+# Initialize components with error handling
+@st.cache_resource
+def initialize_components():
+    books = load_book_data()
+    if books.empty:
+        st.error("Failed to load book data")
+        st.stop()
+    
+    embeddings = setup_embeddings()
+    if embeddings is None:
+        st.error("Failed to initialize embeddings")
+        st.stop()
+    
+    db = setup_chroma(embeddings)
+    if db is None:
+        st.error("Failed to initialize vector database")
+        st.stop()
+    
+    return books, embeddings, db
 
 # Initialize components
-books = load_book_data()
-huggingface_embeddings = setup_embeddings()
-db_books = setup_chroma(huggingface_embeddings)
+books, huggingface_embeddings, db_books = initialize_components()
 
 
 # ==============================
