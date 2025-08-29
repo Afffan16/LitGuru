@@ -2,14 +2,12 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import os
-from chromadb.config import Settings
 from dotenv import load_dotenv
-
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # ==============================
-# Load env vars & Configure
+# Load env vars
 # ==============================
 load_dotenv()
 openai_api = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
@@ -38,54 +36,27 @@ def setup_embeddings():
 
 @st.cache_resource
 def setup_chroma(_embeddings):
-    # Configure ChromaDB
-    client_settings = Settings(
-        anonymized_telemetry=False,
-        is_persistent=True
-    )
-    
-    # Initialize ChromaDB
+    # Initialize ChromaDB with minimal settings
     db = Chroma(
         persist_directory="./chroma_db",
-        embedding_function=_embeddings,
-        client_settings=client_settings
+        embedding_function=_embeddings
     )
     
-    # Initialize collection if empty
-    if db._collection.count() == 0:
-        books_data = load_book_data()
-        texts = []
-        metadatas = []
-        ids = []
-        
-        for idx, row in books_data.iterrows():
-            # Create text for embedding
-            text = f"{row['isbn13']} {row['title']} {row['authors']} {row['description']}"
-            texts.append(text)
+    try:
+        # Check if collection needs initialization
+        collection_size = len(db.get()["ids"])
+        if collection_size == 0:
+            books_data = load_book_data()
+            texts = []
+            for _, row in books_data.iterrows():
+                text = f"{row['isbn13']} {row['title']} {row['authors']} {row['description']}"
+                texts.append(text)
             
-            # Create metadata
-            metadata = {
-                "isbn13": str(row['isbn13']),
-                "title": row['title'],
-                "authors": row['authors'],
-                "description": row['description'],
-                "category": str(row['simple_categories']),
-                "joy": float(row['joy']),
-                "sadness": float(row['sadness']),
-                "anger": float(row['anger']),
-                "fear": float(row['fear']),
-                "surprise": float(row['surprise'])
-            }
-            metadatas.append(metadata)
-            ids.append(str(idx))
-        
-        # Add documents to ChromaDB
-        db.add_texts(
-            texts=texts,
-            metadatas=metadatas,
-            ids=ids
-        )
-        db.persist()
+            # Add documents to ChromaDB
+            db.add_texts(texts=texts)
+            db.persist()
+    except Exception as e:
+        st.warning(f"Collection initialization skipped: {str(e)}")
     
     return db
 
@@ -99,6 +70,7 @@ db_books = setup_chroma(huggingface_embeddings)
 # ==============================
 # Recommendation Logic
 # ==============================
+
 def retrieve_semantic_recommendations(query: str, initial_top_k: int = 50) -> pd.DataFrame:
     try:
         # Get recommendations with metadata
