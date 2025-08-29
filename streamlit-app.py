@@ -43,7 +43,7 @@ def setup_embeddings():
     )
 
 @st.cache_resource
-def setup_chroma(embeddings):
+def setup_chroma(_embeddings):
     return Chroma(
         persist_directory="./chroma_db",
         embedding_function=embeddings
